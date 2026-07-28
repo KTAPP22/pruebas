@@ -914,12 +914,12 @@
                   <>
                     <span className="text-amber-400 font-black text-[10px] uppercase tracking-widest">TIEMPO SESIÓN</span>
                     <div className="my-1 flex flex-col items-center justify-center font-mono font-black">
-                      <span className="text-2xl sm:text-3xl text-white tracking-tight">
+                      <span className="text-2xl sm:text-3xl lg:text-4xl text-white tracking-tight">
                         {state.sessionTimeText || '--:--:--'}
                       </span>
                     </div>
                     <div className="w-full flex justify-center">
-                      <span className="text-[9px] font-mono text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                      <span className="text-xs sm:text-sm font-mono text-amber-400 font-extrabold bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg uppercase tracking-wider">
                         {driver ? `${driver.currentLap} VUELTAS` : '0 VUELTAS'}
                       </span>
                     </div>
@@ -928,8 +928,8 @@
                   <>
                     <span className="text-gray-400 font-black text-[10px] uppercase tracking-widest">VUELTAS</span>
                     <div className="my-1 flex items-baseline justify-center gap-0.5 font-mono font-black">
-                      <span className="text-3xl text-white">{driver ? driver.currentLap : '0'}</span>
-                      <span className="text-xs text-gray-500">/{state.totalLaps || '--'}</span>
+                      <span className="text-4xl sm:text-5xl text-white font-black">{driver ? driver.currentLap : '0'}</span>
+                      <span className="text-sm sm:text-base text-gray-500 font-bold">/{state.totalLaps || '--'}</span>
                     </div>
                     <div className="w-full flex justify-center">
                       <span className="text-[9px] font-mono text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider">
@@ -1038,7 +1038,7 @@
                   <span className={`text-[10px] font-mono font-black ${deltaLastVsBest <= 0 ? 'text-[#00FF66]' : 'text-yellow-400'}`}>{deltaFormatted}</span>
                 </div>
                 <div className="my-auto flex items-center justify-center">
-                  <span className="text-xl sm:text-2xl font-black font-mono text-white tracking-tighter">
+                  <span className="text-2xl sm:text-3xl lg:text-4xl font-black font-mono text-white tracking-tighter">
                     {driver ? apexTimingService.formatTime(driver.lastLapMs) : '--:--.---'}
                   </span>
                 </div>
@@ -1053,7 +1053,7 @@
                   </span>
                 </div>
                 <div className="my-auto flex items-center justify-center">
-                  <span className="text-xl sm:text-2xl font-black font-mono text-purple-400 tracking-tighter">
+                  <span className="text-2xl sm:text-3xl lg:text-4xl font-black font-mono text-purple-400 tracking-tighter">
                     {driver ? apexTimingService.formatTime(driver.bestLapMs) : '--:--.---'}
                   </span>
                 </div>
