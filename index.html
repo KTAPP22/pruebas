@@ -513,29 +513,24 @@
         return false;
       }
 
-      // Detect pit IN/OUT status per driver row
+      // Detect pit IN/OUT status per driver row (each driver tracked independently)
       detectPitStatus(rowId, entry, value) {
         if (!value || typeof value !== 'string') return;
         const upper = value.toUpperCase().trim();
         
-        // Detect IN: driver enters the box
+        // Detect IN: driver enters the box (just mark as in-pit, no count yet)
         if (upper === 'IN' || upper === 'PIT IN' || upper === 'PITIN' || upper === 'BOX IN') {
-          if (!this.driverInPit.get(rowId)) {
-            this.driverInPit.set(rowId, true);
+          this.driverInPit.set(rowId, true);
+          entry.inPit = true;
+        }
+        // Detect OUT: driver exits the box → +1 pit stop confirmed (like a finish line pass)
+        else if (upper === 'OUT' || upper === 'PIT OUT' || upper === 'PITOUT' || upper === 'BOX OUT') {
+          if (this.driverInPit.get(rowId)) {
+            // Only count if driver was marked IN first
             const count = (this.pitCounts.get(rowId) || 0) + 1;
             this.pitCounts.set(rowId, count);
             entry.pitCount = count;
-            entry.inPit = true;
           }
-        }
-        // Detect OUT: driver exits the box
-        else if (upper === 'OUT' || upper === 'PIT OUT' || upper === 'PITOUT' || upper === 'BOX OUT') {
-          this.driverInPit.set(rowId, false);
-          entry.inPit = false;
-          entry.pitCount = this.pitCounts.get(rowId) || 0;
-        }
-        // If driver has a normal lap time or position, they are NOT in pit
-        else if (this.driverInPit.get(rowId) && upper.match(/^\d+:\d+/)) {
           this.driverInPit.set(rowId, false);
           entry.inPit = false;
         }
