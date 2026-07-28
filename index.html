@@ -211,6 +211,26 @@
         this.notify();
       }
 
+      loadDemoData() {
+        this.state.isLiveConnected = true;
+        this.state.sessionName = "Carrera Resistencia 2H - Demo";
+        this.state.sessionTimeText = "01:42:15";
+        this.state.flagStatus = "GREEN";
+        this.state.totalLaps = 120;
+
+        const demoDrivers = [
+          { position: 1, kartNumber: 5, name: "Carlos Sainz", lastLapMs: 48010, bestLapMs: 47980, currentLap: 50, gapLeaderMs: 0, intervalAheadMs: 0, intervalBehindMs: 12450, pitCount: 2, inPit: false },
+          { position: 2, kartNumber: 8, name: "Fernando A.", lastLapMs: 48150, bestLapMs: 48010, currentLap: 49, gapLeaderMs: 12450, intervalAheadMs: 12450, intervalBehindMs: 1230, pitCount: 2, inPit: false },
+          { position: 3, kartNumber: 14, name: this.targetDriverName || "Alex R.", lastLapMs: 48120, bestLapMs: 48075, currentLap: 48, gapLeaderMs: 13680, intervalAheadMs: 1230, intervalBehindMs: 890, pitCount: 1, inPit: false },
+          { position: 4, kartNumber: 22, name: "Marc Gené", lastLapMs: 48340, bestLapMs: 48110, currentLap: 48, gapLeaderMs: 14570, intervalAheadMs: 890, intervalBehindMs: 3200, pitCount: 1, inPit: false },
+          { position: 5, kartNumber: 11, name: "Pedro de la Rosa", lastLapMs: 48500, bestLapMs: 48200, currentLap: 47, gapLeaderMs: 17770, intervalAheadMs: 3200, intervalBehindMs: 0, pitCount: 2, inPit: false }
+        ];
+
+        this.state.drivers = demoDrivers;
+        this.resolveTargetKart();
+        this.notify();
+      }
+
       resolveTargetKart() {
         if (!Array.isArray(this.state.drivers) || this.state.drivers.length === 0) return;
         const query = this.targetDriverName.toLowerCase();
@@ -730,7 +750,7 @@
     // =========================================================================
     // 4. PITBOARD HUD COMPONENT (DECOUPLED MEDIA QUERIES FOR PHYSICAL ROTATION LOCK)
     // =========================================================================
-    function PitboardHUD({ state, targetDriverName, isLocked, isViewportPortrait, raceMode, onToggleMode, onToggleLock, onChangeCircuit, onOpenTiming, onOpenSettings }) {
+    function PitboardHUD({ state, targetDriverName, isLocked, isViewportPortrait, raceMode, onToggleMode, onToggleLock, onChangeCircuit, onOpenTiming, onOpenSettings, onLoadDemo }) {
       const hasDrivers = Array.isArray(state.drivers) && state.drivers.length > 0;
       const currentTargetName = targetDriverName || 'Alex R.';
 
@@ -797,6 +817,16 @@
             
             {/* TIMING & LOCK CONTROLS */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 z-30">
+              {/* DEMO BUTTON */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); if (onLoadDemo) onLoadDemo(); }}
+                className="px-2 py-1.5 rounded-lg border border-purple-800 bg-purple-950/40 text-purple-300 hover:bg-purple-900/60 text-[10px] sm:text-xs font-black uppercase tracking-wider cursor-pointer"
+                title="Cargar datos de prueba (Demo)"
+              >
+                🎮 DEMO
+              </button>
+
               {/* MODE TOGGLE: SPRINT / ENDURANCE */}
               <button
                 type="button"
@@ -1170,6 +1200,7 @@
             onChangeCircuit={handleChangeCircuit}
             onOpenTiming={() => setIsTimingOpen(true)}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onLoadDemo={() => apexTimingService.loadDemoData()}
           />
           <SettingsModal 
             isOpen={isSettingsOpen} 
