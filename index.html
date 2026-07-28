@@ -989,7 +989,7 @@
               </div>
 
               {/* CARD: VUELTAS / TIEMPO SESIÓN */}
-              <div className={`bg-[#0A0A0E] border-2 ${raceMode === 'endurance' ? 'border-amber-600/50' : 'border-gray-800'} rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-2xl h-full min-h-[110px]`}>
+              <div className={`bg-[#0A0A0E] border-2 ${raceMode === 'endurance' ? (!isStintMinMet ? 'border-red-600/80 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-amber-600/50') : 'border-gray-800'} rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-2xl h-full min-h-[110px]`}>
                 {raceMode === 'endurance' ? (
                   <>
                     <div className="w-full flex justify-between items-center px-1">
@@ -1003,18 +1003,14 @@
                       )}
                     </div>
                     <div className="my-1 flex flex-col items-center justify-center font-mono font-black">
-                      <span className="text-2xl sm:text-3xl lg:text-4xl text-white tracking-tight">
+                      {/* EL PROPIO TIEMPO DE LA SESIÓN SE PONE EN ROJO MIENTRAS NO SE CUMPLE EL STINT MÍNIMO */}
+                      <span className={`text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight ${!isStintMinMet ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                         {state.sessionTimeText || '--:--:--'}
                       </span>
                     </div>
-                    {/* STINT MINIMUM INDICATOR: RED UNTIL MINIMUM IS REACHED, RESETS TO RED ON OUT PIT EXIT */}
                     <div className="w-full flex justify-center">
-                      <span className={`text-xs sm:text-sm font-mono font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider transition-colors ${
-                        !isStintMinMet 
-                          ? 'text-red-400 bg-red-950/80 border-2 border-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.4)]' 
-                          : 'text-emerald-400 bg-emerald-950/80 border-2 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
-                      }`}>
-                        {!isStintMinMet ? `🔴 ${stintDisplay}` : `🟢 ${stintDisplay}`}
+                      <span className="text-xs sm:text-sm font-mono text-amber-400 font-extrabold bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                        {driver ? `${driver.currentLap} VUELTAS` : '0 VUELTAS'}
                       </span>
                     </div>
                   </>
