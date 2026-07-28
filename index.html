@@ -155,17 +155,44 @@
         this.pitCounts = new Map(); // Track pit stops per rowId
         this.driverInPit = new Map(); // Track if driver is currently IN pit
 
+        // Restore saved endurance live state from localStorage
+        let restoredStarted = false;
+        let restoredFinished = false;
+        let restoredSessionTime = "";
+        let restoredDrivers = [];
+
+        try {
+          const savedStateStr = localStorage.getItem('kart_endurance_session_state');
+          if (savedStateStr) {
+            const savedState = JSON.parse(savedStateStr);
+            if (savedState) {
+              restoredStarted = Boolean(savedState.isEnduranceStarted);
+              restoredFinished = Boolean(savedState.isEnduranceFinished);
+              restoredSessionTime = savedState.sessionTimeText || "";
+              if (Array.isArray(savedState.drivers)) restoredDrivers = savedState.drivers;
+              if (Array.isArray(savedState.pitCounts)) {
+                savedState.pitCounts.forEach(([rId, cnt]) => this.pitCounts.set(rId, cnt));
+              }
+              if (Array.isArray(savedState.driverInPit)) {
+                savedState.driverInPit.forEach(([rId, bool]) => this.driverInPit.set(rId, bool));
+              }
+            }
+          }
+        } catch (e) {}
+
         this.state = {
           activeCircuitId: this.activeCircuitId,
           trackName: CIRCUITS[this.activeCircuitId].name,
           sessionName: "Esperando tanda en vivo...",
-          sessionTimeText: "",
+          sessionTimeText: restoredSessionTime,
           flagStatus: "GREEN",
           totalLaps: 0,
           isLiveConnected: false,
+          isEnduranceStarted: restoredStarted,
+          isEnduranceFinished: restoredFinished,
           targetDriverName: this.targetDriverName,
           matchedKartNumber: 14,
-          drivers: []
+          drivers: restoredDrivers
         };
       }
 
@@ -217,6 +244,8 @@
         this.state.sessionTimeText = "01:42:15";
         this.state.flagStatus = "GREEN";
         this.state.totalLaps = 120;
+        this.state.isEnduranceStarted = true;
+        this.state.isEnduranceFinished = false;
 
         const demoDrivers = [
           { position: 1, kartNumber: 5, name: "Carlos Sainz", lastLapMs: 48010, bestLapMs: 47980, currentLap: 50, gapLeaderMs: 0, intervalAheadMs: 0, intervalBehindMs: 12450, pitCount: 2, inPit: false },
@@ -365,22 +394,35 @@
           const value = pipeIdx2 >= 0 ? rest.substring(pipeIdx2 + 1) : '';
 
           if (cellId === 'init') {
+            const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
             this.sessionRows.clear();
-            this.pitCounts.clear();
-            this.driverInPit.clear();
+            // Preserve pitCounts in endurance mode if race has started
+            if (raceMode !== 'endurance' || !this.state.isEnduranceStarted) {
+              this.pitCounts.clear();
+              this.driverInPit.clear();
+            }
             continue;
           }
 
           if (cellId === 'dyn1' || cellId === 'track') {
             const statusLower = value.toLowerCase();
+            const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
+
             if (statusLower.includes('chequered') || statusLower.includes('cuadros') || statusLower.includes('finish') || statusLower.includes('finaliz')) {
               this.state.flagStatus = 'CHECKERED';
+              if (raceMode === 'endurance') {
+                this.state.isEnduranceFinished = true;
+              }
             } else if (statusLower.includes('red') || statusLower.includes('roja')) {
               this.state.flagStatus = 'RED';
             } else if (statusLower.includes('yellow') || statusLower.includes('amarilla')) {
               this.state.flagStatus = 'YELLOW';
             } else {
               this.state.flagStatus = 'GREEN';
+              // Green flag triggers start of endurance data collection
+              if (raceMode === 'endurance' && !this.state.isEnduranceStarted) {
+                this.state.isEnduranceStarted = true;
+              }
             }
             continue;
           }
@@ -415,8 +457,8 @@
                     currentLap: 0,
                     gapLeaderMs: 0,
                     intervalAheadMs: 0,
-                    pitCount: 0,
-                    inPit: false
+                    pitCount: this.pitCounts.get(rId) || 0,
+                    inPit: this.driverInPit.get(rId) || false
                   });
                   if (!this.pitCounts.has(rId)) this.pitCounts.set(rId, 0);
                   if (!this.driverInPit.has(rId)) this.driverInPit.set(rId, false);
@@ -455,8 +497,8 @@
                 currentLap: 0,
                 gapLeaderMs: 0,
                 intervalAheadMs: 0,
-                pitCount: 0,
-                inPit: false
+                pitCount: this.pitCounts.get(rowId) || 0,
+                inPit: this.driverInPit.get(rowId) || false
               });
               if (!this.pitCounts.has(rowId)) this.pitCounts.set(rowId, 0);
               if (!this.driverInPit.has(rowId)) this.driverInPit.set(rowId, false);
@@ -481,6 +523,19 @@
           for (let i = 0; i < this.state.drivers.length - 1; i++) {
             this.state.drivers[i].intervalBehindMs = this.state.drivers[i + 1].intervalAheadMs;
           }
+
+          // Persist live endurance state to localStorage (survives app reloads/closures)
+          try {
+            localStorage.setItem('kart_endurance_session_state', JSON.stringify({
+              isEnduranceStarted: this.state.isEnduranceStarted,
+              isEnduranceFinished: this.state.isEnduranceFinished,
+              sessionTimeText: this.state.sessionTimeText,
+              pitCounts: Array.from(this.pitCounts.entries()),
+              driverInPit: Array.from(this.driverInPit.entries()),
+              drivers: this.state.drivers,
+              timestamp: Date.now()
+            }));
+          } catch(e) {}
 
           this.notify();
         }
@@ -536,6 +591,17 @@
       // Detect pit IN/OUT status per driver row (each driver tracked independently)
       detectPitStatus(rowId, entry, value) {
         if (!value || typeof value !== 'string') return;
+        const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
+
+        // In endurance mode: do not count pit stops until green flag starts race, or if checkered flag finished race
+        if (raceMode === 'endurance') {
+          if (!this.state.isEnduranceStarted || this.state.isEnduranceFinished) {
+            entry.pitCount = this.pitCounts.get(rowId) || 0;
+            entry.inPit = this.driverInPit.get(rowId) || false;
+            return;
+          }
+        }
+
         const upper = value.toUpperCase().trim();
         
         // Detect IN: driver enters the box (just mark as in-pit, no count yet)
@@ -912,7 +978,16 @@
               <div className={`bg-[#0A0A0E] border-2 ${raceMode === 'endurance' ? 'border-amber-600/50' : 'border-gray-800'} rounded-2xl p-2.5 flex flex-col justify-between items-center text-center shadow-2xl h-full min-h-[110px]`}>
                 {raceMode === 'endurance' ? (
                   <>
-                    <span className="text-amber-400 font-black text-[10px] uppercase tracking-widest">TIEMPO SESIÓN</span>
+                    <div className="w-full flex justify-between items-center px-1">
+                      <span className="text-amber-400 font-black text-[10px] uppercase tracking-widest">TIEMPO SESIÓN</span>
+                      {!state.isEnduranceStarted ? (
+                        <span className="text-[9px] font-mono text-yellow-400 font-bold animate-pulse">⏳ ESPERANDO VERDE</span>
+                      ) : state.isEnduranceFinished ? (
+                        <span className="text-[9px] font-mono text-emerald-400 font-bold">🏁 FINALIZADA</span>
+                      ) : (
+                        <span className="text-[9px] font-mono text-emerald-400 font-bold">🟢 EN VIVO</span>
+                      )}
+                    </div>
                     <div className="my-1 flex flex-col items-center justify-center font-mono font-black">
                       <span className="text-2xl sm:text-3xl lg:text-4xl text-white tracking-tight">
                         {state.sessionTimeText || '--:--:--'}
