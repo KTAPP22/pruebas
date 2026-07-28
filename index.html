@@ -154,6 +154,8 @@
         this.sessionRows = new Map();
         this.pitCounts = new Map(); // Track pit stops per rowId
         this.driverInPit = new Map(); // Track if driver is currently IN pit
+        this.stintStartTimes = new Map(); // Track timestamp when current stint started per rowId
+        this.stintStartLaps = new Map(); // Track lap count when current stint started per rowId
 
         // Restore saved endurance live state from localStorage
         let restoredStarted = false;
@@ -175,6 +177,12 @@
               }
               if (Array.isArray(savedState.driverInPit)) {
                 savedState.driverInPit.forEach(([rId, bool]) => this.driverInPit.set(rId, bool));
+              }
+              if (Array.isArray(savedState.stintStartTimes)) {
+                savedState.stintStartTimes.forEach(([rId, time]) => this.stintStartTimes.set(rId, time));
+              }
+              if (Array.isArray(savedState.stintStartLaps)) {
+                savedState.stintStartLaps.forEach(([rId, lap]) => this.stintStartLaps.set(rId, lap));
               }
             }
           }
@@ -532,6 +540,8 @@
               sessionTimeText: this.state.sessionTimeText,
               pitCounts: Array.from(this.pitCounts.entries()),
               driverInPit: Array.from(this.driverInPit.entries()),
+              stintStartTimes: Array.from(this.stintStartTimes.entries()),
+              stintStartLaps: Array.from(this.stintStartLaps.entries()),
               drivers: this.state.drivers,
               timestamp: Date.now()
             }));
@@ -616,14 +626,28 @@
             const count = (this.pitCounts.get(rowId) || 0) + 1;
             this.pitCounts.set(rowId, count);
             entry.pitCount = count;
+            
+            // Reset stint start timestamp and lap count on pit exit (OUT)
+            this.stintStartTimes.set(rowId, Date.now());
+            this.stintStartLaps.set(rowId, entry.currentLap);
           }
           this.driverInPit.set(rowId, false);
           entry.inPit = false;
         }
         
-        // Always sync pitCount from stored map
+        // Ensure stint start timestamp is initialized if missing
+        if (!this.stintStartTimes.has(rowId)) {
+          this.stintStartTimes.set(rowId, Date.now());
+          this.stintStartLaps.set(rowId, entry.currentLap);
+        }
+
+        // Always sync pitCount and stint metrics from stored maps
         entry.pitCount = this.pitCounts.get(rowId) || 0;
         entry.inPit = this.driverInPit.get(rowId) || false;
+        entry.stintStartLap = this.stintStartLaps.get(rowId) || 0;
+        entry.stintStartTime = this.stintStartTimes.get(rowId) || Date.now();
+        entry.stintLaps = Math.max(0, entry.currentLap - entry.stintStartLap);
+        entry.stintElapsedMs = Math.max(0, Date.now() - entry.stintStartTime);
       }
 
       formatTime(ms) {
@@ -816,7 +840,7 @@
     // =========================================================================
     // 4. PITBOARD HUD COMPONENT (DECOUPLED MEDIA QUERIES FOR PHYSICAL ROTATION LOCK)
     // =========================================================================
-    function PitboardHUD({ state, targetDriverName, isLocked, isViewportPortrait, raceMode, onToggleMode, onToggleLock, onChangeCircuit, onOpenTiming, onOpenSettings, onLoadDemo }) {
+    function PitboardHUD({ state, targetDriverName, isLocked, isViewportPortrait, raceMode, enduranceConfig, onToggleMode, onToggleLock, onChangeCircuit, onOpenTiming, onOpenSettings, onLoadDemo }) {
       const hasDrivers = Array.isArray(state.drivers) && state.drivers.length > 0;
       const currentTargetName = targetDriverName || 'Alex R.';
 
@@ -829,6 +853,27 @@
       const driverAhead = (matchedIndex > 0 && hasDrivers) ? state.drivers[matchedIndex - 1] : null;
       const driverBehind = (matchedIndex >= 0 && matchedIndex < state.drivers.length - 1 && hasDrivers) ? state.drivers[matchedIndex + 1] : null;
       const isLeader = driver ? driver.position === 1 : false;
+
+      // Calculate Stint Minimum Status (Red until minimum is reached, resets to Red on OUT pit exit)
+      const eConfig = enduranceConfig || { stintMinType: 'time', stintMinValue: 15 };
+      let isStintMinMet = true;
+      let stintDisplay = "";
+
+      if (raceMode === 'endurance') {
+        const minVal = eConfig.stintMinValue || 0;
+        if (eConfig.stintMinType === 'laps') {
+          const currentStintLaps = driver ? (driver.stintLaps || 0) : 0;
+          isStintMinMet = currentStintLaps >= minVal;
+          stintDisplay = `STINT: ${currentStintLaps}/${minVal} VUELTAS`;
+        } else {
+          const elapsedMs = driver ? (driver.stintElapsedMs || 0) : 0;
+          const elapsedMin = Math.floor(elapsedMs / 60000);
+          const elapsedSec = Math.floor((elapsedMs % 60000) / 1000);
+          const secStr = elapsedSec < 10 ? `0${elapsedSec}` : `${elapsedSec}`;
+          isStintMinMet = elapsedMin >= minVal;
+          stintDisplay = `STINT: ${elapsedMin}:${secStr} / ${minVal}m`;
+        }
+      }
 
       // CAMBIO 2: Cuando es líder, obtener P2 y P3 para mostrar sus gaps
       const p2Driver = (isLeader && hasDrivers && state.drivers.length > 1) ? state.drivers[1] : null;
@@ -993,9 +1038,14 @@
                         {state.sessionTimeText || '--:--:--'}
                       </span>
                     </div>
+                    {/* STINT MINIMUM INDICATOR: RED UNTIL MINIMUM IS REACHED, RESETS TO RED ON OUT PIT EXIT */}
                     <div className="w-full flex justify-center">
-                      <span className="text-xs sm:text-sm font-mono text-amber-400 font-extrabold bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                        {driver ? `${driver.currentLap} VUELTAS` : '0 VUELTAS'}
+                      <span className={`text-xs sm:text-sm font-mono font-extrabold px-2.5 py-1 rounded-lg uppercase tracking-wider transition-colors ${
+                        !isStintMinMet 
+                          ? 'text-red-400 bg-red-950/80 border-2 border-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.4)]' 
+                          : 'text-emerald-400 bg-emerald-950/80 border-2 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                      }`}>
+                        {!isStintMinMet ? `🔴 ${stintDisplay}` : `🟢 ${stintDisplay}`}
                       </span>
                     </div>
                   </>
@@ -1270,6 +1320,7 @@
             isLocked={isOrientationLocked}
             isViewportPortrait={isViewportPortrait}
             raceMode={raceMode}
+            enduranceConfig={enduranceConfig}
             onToggleMode={handleToggleMode}
             onToggleLock={handleToggleOrientationLock}
             onChangeCircuit={handleChangeCircuit}
