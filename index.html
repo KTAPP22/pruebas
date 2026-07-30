@@ -188,6 +188,9 @@
           }
         } catch (e) {}
 
+        this.sessionTimeRemainingMs = 0;
+        this.clockIntervalId = null;
+
         this.state = {
           activeCircuitId: this.activeCircuitId,
           trackName: CIRCUITS[this.activeCircuitId].name,
@@ -202,6 +205,28 @@
           matchedKartNumber: 14,
           drivers: restoredDrivers
         };
+      }
+
+      startClockTicker() {
+        if (this.clockIntervalId) return;
+        this.clockIntervalId = setInterval(() => {
+          if (this.sessionTimeRemainingMs > 0 && this.state.flagStatus !== 'CHECKERED') {
+            this.sessionTimeRemainingMs = Math.max(0, this.sessionTimeRemainingMs - 1000);
+            this.state.sessionTimeText = this.formatSessionTimeFromMs(this.sessionTimeRemainingMs);
+            this.notify();
+          }
+        }, 1000);
+      }
+
+      formatSessionTimeFromMs(ms) {
+        if (!ms || ms <= 0) return "00:00";
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        const mStr = String(m).padStart(2, '0');
+        const sStr = String(s).padStart(2, '0');
+        return h > 0 ? `${h}:${mStr}:${sStr}` : `${mStr}:${sStr}`;
       }
 
       subscribe(callback) {
@@ -261,6 +286,7 @@
       start() {
         if (this.pollTimerId) return;
         this.fetchRealApexData();
+        this.startClockTicker();
         // Jitter polling: 3s ± 500ms to avoid 6+ devices colliding on the same proxy
         const scheduleNext = () => {
           const jitter = Math.floor(Math.random() * 1000) - 500; // -500ms to +500ms
@@ -277,6 +303,10 @@
         if (this.pollTimerId) {
           clearTimeout(this.pollTimerId);
           this.pollTimerId = null;
+        }
+        if (this.clockIntervalId) {
+          clearInterval(this.clockIntervalId);
+          this.clockIntervalId = null;
         }
       }
 
@@ -323,46 +353,62 @@
         const str = String(val).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
         if (!str) return null;
 
+        let totalMs = 0;
+        let textResult = null;
+
         // 1. Try HH:MM:SS
-        const timeMatchLong = str.match(/(\d{1,2}:\d{2}:\d{2})/);
-        if (timeMatchLong) return timeMatchLong[1];
+        const timeMatchLong = str.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+        if (timeMatchLong) {
+          const h = parseInt(timeMatchLong[1], 10);
+          const m = parseInt(timeMatchLong[2], 10);
+          const s = parseInt(timeMatchLong[3], 10);
+          totalMs = ((h * 3600) + (m * 60) + s) * 1000;
+          textResult = timeMatchLong[0];
+        }
 
         // 2. Try MM:SS (excluding lap time decimals)
-        const timeMatchShort = str.match(/(\d{1,2}:\d{2})(?!\.\d)/);
-        if (timeMatchShort) return timeMatchShort[1];
-
-        // 3. Try data-remain HTML attribute
-        const remainMatch = String(val).match(/data-remain="(\d+)"/i);
-        if (remainMatch) {
-          const remainSec = parseInt(remainMatch[1], 10);
-          if (!isNaN(remainSec) && remainSec > 0) {
-            const h = Math.floor(remainSec / 3600);
-            const m = Math.floor((remainSec % 3600) / 60);
-            const s = remainSec % 60;
-            return h > 0 
-              ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-              : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        if (!textResult) {
+          const timeMatchShort = str.match(/(\d{1,2}):(\d{2})(?!\.\d)/);
+          if (timeMatchShort) {
+            const m = parseInt(timeMatchShort[1], 10);
+            const s = parseInt(timeMatchShort[2], 10);
+            totalMs = ((m * 60) + s) * 1000;
+            textResult = timeMatchShort[0];
           }
         }
 
-        // 4. Try pure numeric counts (like 121494 ms or 7200 sec)
-        const cleanDigits = str.replace(/[^\d]/g, '');
-        if (cleanDigits.length > 0 && str.length < 12) {
-          const num = parseInt(cleanDigits, 10);
-          if (!isNaN(num) && num > 0) {
-            const totalSec = num > 86400 ? Math.floor(num / 1000) : num;
-            if (totalSec >= 0 && totalSec < 86400) {
-              const h = Math.floor(totalSec / 3600);
-              const m = Math.floor((totalSec % 3600) / 60);
-              const s = totalSec % 60;
-              return h > 0 
-                ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-                : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        // 3. Try data-remain HTML attribute
+        if (!textResult) {
+          const remainMatch = String(val).match(/data-remain="(\d+)"/i);
+          if (remainMatch) {
+            const remainSec = parseInt(remainMatch[1], 10);
+            if (!isNaN(remainSec) && remainSec > 0) {
+              totalMs = remainSec * 1000;
+              textResult = this.formatSessionTimeFromMs(totalMs);
             }
           }
         }
 
-        return null;
+        // 4. Try pure numeric counts (like 121494 ms or 7200 sec)
+        if (!textResult) {
+          const cleanDigits = str.replace(/[^\d]/g, '');
+          if (cleanDigits.length > 0 && str.length < 12) {
+            const num = parseInt(cleanDigits, 10);
+            if (!isNaN(num) && num > 0) {
+              const totalSec = num > 86400 ? Math.floor(num / 1000) : num;
+              if (totalSec >= 0 && totalSec < 86400) {
+                totalMs = totalSec * 1000;
+                textResult = this.formatSessionTimeFromMs(totalMs);
+              }
+            }
+          }
+        }
+
+        if (textResult && totalMs > 0) {
+          this.sessionTimeRemainingMs = totalMs;
+        }
+
+        return textResult;
       }
 
       async fetchRealApexData() {
