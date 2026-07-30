@@ -394,6 +394,9 @@
             const statusLower = value.toLowerCase();
             const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
 
+            // Debug: log all dyn1/track values for diagnosis
+            console.debug(`[APEX-DBG] ${cellId} => "${value}"`);
+
             if (statusLower.includes('chequered') || statusLower.includes('cuadros') || statusLower.includes('finish') || statusLower.includes('finaliz')) {
               this.state.flagStatus = 'CHECKERED';
               if (raceMode === 'endurance') {
@@ -410,14 +413,32 @@
                 this.state.isEnduranceStarted = true;
               }
             }
+
+            // Also try to extract time from dyn1/track value (some circuits embed it here)
+            const cleanVal1 = value.replace(/<[^>]*>/g, '').trim();
+            const timeMatch1 = cleanVal1.match(/(\d{1,2}:\d{2}:\d{2})/);
+            const timeMatch1b = cleanVal1.match(/(\d{1,2}:\d{2})(?!\.\d)/);
+            if (timeMatch1) {
+              this.state.sessionTimeText = timeMatch1[1];
+            } else if (timeMatch1b && !this.state.sessionTimeText) {
+              this.state.sessionTimeText = timeMatch1b[1];
+            }
             continue;
           }
 
-          // Capture session time from dynamic cells (dyn2, dyn3, etc.)
-          if (cellId.startsWith('dyn') && cellId !== 'dyn1') {
-            const timeMatch = value.match(/(\d{1,2}:\d{2}:\d{2})/);
-            if (timeMatch) {
-              this.state.sessionTimeText = timeMatch[1];
+          // Capture session time from ALL dynamic cells (dyn2, dyn3, dyn4, etc.)
+          if (cellId.startsWith('dyn')) {
+            // Strip any HTML tags and extract clean text
+            const cleanValue = value.replace(/<[^>]*>/g, '').trim();
+            console.debug(`[APEX-DBG] ${cellId} => "${cleanValue}" (raw: "${value.substring(0, 80)}")`);
+
+            // Try HH:MM:SS first, then MM:SS
+            const timeMatchLong = cleanValue.match(/(\d{1,2}:\d{2}:\d{2})/);
+            const timeMatchShort = cleanValue.match(/(\d{1,2}:\d{2})(?!\.\d)/);
+            if (timeMatchLong) {
+              this.state.sessionTimeText = timeMatchLong[1];
+            } else if (timeMatchShort) {
+              this.state.sessionTimeText = timeMatchShort[1];
             }
             continue;
           }
