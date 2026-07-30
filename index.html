@@ -207,28 +207,6 @@
         };
       }
 
-      startClockTicker() {
-        if (this.clockIntervalId) return;
-        this.clockIntervalId = setInterval(() => {
-          if (this.sessionTimeRemainingMs > 0 && this.state.flagStatus !== 'CHECKERED') {
-            this.sessionTimeRemainingMs = Math.max(0, this.sessionTimeRemainingMs - 1000);
-            this.state.sessionTimeText = this.formatSessionTimeFromMs(this.sessionTimeRemainingMs);
-            this.notify();
-          }
-        }, 1000);
-      }
-
-      formatSessionTimeFromMs(ms) {
-        if (!ms || ms <= 0) return "00:00";
-        const totalSec = Math.floor(ms / 1000);
-        const h = Math.floor(totalSec / 3600);
-        const m = Math.floor((totalSec % 3600) / 60);
-        const s = totalSec % 60;
-        const mStr = String(m).padStart(2, '0');
-        const sStr = String(s).padStart(2, '0');
-        return h > 0 ? `${h}:${mStr}:${sStr}` : `${mStr}:${sStr}`;
-      }
-
       subscribe(callback) {
         this.listeners.add(callback);
         callback(this.state);
@@ -286,15 +264,12 @@
       start() {
         if (this.pollTimerId) return;
         this.fetchRealApexData();
-        this.startClockTicker();
-        // Jitter polling: 3s ± 500ms to avoid 6+ devices colliding on the same proxy
+        // Fast live polling: 1.5s interval to receive exact timing feed updates instantly
         const scheduleNext = () => {
-          const jitter = Math.floor(Math.random() * 1000) - 500; // -500ms to +500ms
-          const interval = Math.max(2000, 3000 + jitter);
           this.pollTimerId = setTimeout(() => {
             this.fetchRealApexData();
             scheduleNext();
-          }, interval);
+          }, 1500);
         };
         scheduleNext();
       }
@@ -303,10 +278,6 @@
         if (this.pollTimerId) {
           clearTimeout(this.pollTimerId);
           this.pollTimerId = null;
-        }
-        if (this.clockIntervalId) {
-          clearInterval(this.clockIntervalId);
-          this.clockIntervalId = null;
         }
       }
 
@@ -506,8 +477,9 @@
 
             // Check if dyn1 or track contains valid session time (e.g. dyn1|count|121494)
             const parsedTime1 = this.parseSessionTimeValue(value);
-            if (parsedTime1) {
+            if (parsedTime1 && this.state.sessionTimeText !== parsedTime1) {
               this.state.sessionTimeText = parsedTime1;
+              hasUpdates = true;
             }
             continue;
           }
@@ -515,8 +487,9 @@
           // Capture session time from ALL dynamic cells (dyn2, dyn3, dyn4, etc.)
           if (cellId.startsWith('dyn')) {
             const parsedTime = this.parseSessionTimeValue(value);
-            if (parsedTime) {
+            if (parsedTime && this.state.sessionTimeText !== parsedTime) {
               this.state.sessionTimeText = parsedTime;
+              hasUpdates = true;
             }
             continue;
           }
