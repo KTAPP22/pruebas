@@ -318,6 +318,53 @@
         return 0;
       }
 
+      parseSessionTimeValue(val) {
+        if (val === undefined || val === null || val === '') return null;
+        const str = String(val).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+        if (!str) return null;
+
+        // 1. Try HH:MM:SS
+        const timeMatchLong = str.match(/(\d{1,2}:\d{2}:\d{2})/);
+        if (timeMatchLong) return timeMatchLong[1];
+
+        // 2. Try MM:SS (excluding lap time decimals)
+        const timeMatchShort = str.match(/(\d{1,2}:\d{2})(?!\.\d)/);
+        if (timeMatchShort) return timeMatchShort[1];
+
+        // 3. Try data-remain HTML attribute
+        const remainMatch = String(val).match(/data-remain="(\d+)"/i);
+        if (remainMatch) {
+          const remainSec = parseInt(remainMatch[1], 10);
+          if (!isNaN(remainSec) && remainSec > 0) {
+            const h = Math.floor(remainSec / 3600);
+            const m = Math.floor((remainSec % 3600) / 60);
+            const s = remainSec % 60;
+            return h > 0 
+              ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+              : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+          }
+        }
+
+        // 4. Try pure numeric counts (like 121494 ms or 7200 sec)
+        const cleanDigits = str.replace(/[^\d]/g, '');
+        if (cleanDigits.length > 0 && str.length < 12) {
+          const num = parseInt(cleanDigits, 10);
+          if (!isNaN(num) && num > 0) {
+            const totalSec = num > 86400 ? Math.floor(num / 1000) : num;
+            if (totalSec >= 0 && totalSec < 86400) {
+              const h = Math.floor(totalSec / 3600);
+              const m = Math.floor((totalSec % 3600) / 60);
+              const s = totalSec % 60;
+              return h > 0 
+                ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+                : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            }
+          }
+        }
+
+        return null;
+      }
+
       async fetchRealApexData() {
         const circuit = CIRCUITS[this.activeCircuitId];
         const apiPort = circuit.configPort + 4;
@@ -394,9 +441,6 @@
             const statusLower = value.toLowerCase();
             const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
 
-            // Debug: log all dyn1/track values for diagnosis
-            console.debug(`[APEX-DBG] ${cellId} => "${value}"`);
-
             if (statusLower.includes('chequered') || statusLower.includes('cuadros') || statusLower.includes('finish') || statusLower.includes('finaliz')) {
               this.state.flagStatus = 'CHECKERED';
               if (raceMode === 'endurance') {
@@ -414,70 +458,20 @@
               }
             }
 
-            // Also try to extract time from dyn1/track value (some circuits embed it here)
-            const cleanVal1 = value.replace(/<[^>]*>/g, '').trim();
-            const timeMatch1 = cleanVal1.match(/(\d{1,2}:\d{2}:\d{2})/);
-            const timeMatch1b = cleanVal1.match(/(\d{1,2}:\d{2})(?!\.\d)/);
-            if (timeMatch1) {
-              this.state.sessionTimeText = timeMatch1[1];
-            } else if (timeMatch1b && !this.state.sessionTimeText) {
-              this.state.sessionTimeText = timeMatch1b[1];
+            // Check if dyn1 or track contains valid session time (e.g. dyn1|count|121494)
+            const parsedTime1 = this.parseSessionTimeValue(value);
+            if (parsedTime1) {
+              this.state.sessionTimeText = parsedTime1;
             }
             continue;
           }
 
           // Capture session time from ALL dynamic cells (dyn2, dyn3, dyn4, etc.)
-          if (cellId.startsWith('dyn') && cellId !== 'dyn1') {
-            // Strip any HTML tags and extract clean text
-            const cleanValue = value.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
-            console.debug(`[APEX-DBG] ${cellId} => "${cleanValue}" (raw: "${value.substring(0, 120)}")`);
-
-            // 1. Try HH:MM:SS format
-            const timeMatchLong = cleanValue.match(/(\d{1,2}:\d{2}:\d{2})/);
-            if (timeMatchLong) {
-              this.state.sessionTimeText = timeMatchLong[1];
-              continue;
+          if (cellId.startsWith('dyn')) {
+            const parsedTime = this.parseSessionTimeValue(value);
+            if (parsedTime) {
+              this.state.sessionTimeText = parsedTime;
             }
-
-            // 2. Try MM:SS format (but NOT lap times like 1:02.345)
-            const timeMatchShort = cleanValue.match(/(\d{1,2}:\d{2})(?!\.\d)/);
-            if (timeMatchShort) {
-              this.state.sessionTimeText = timeMatchShort[1];
-              continue;
-            }
-
-            // 3. Try countdown epoch (Apex sends data-remain or timestamp in ms/s)
-            // Check for data-remain attribute in raw HTML value
-            const remainMatch = value.match(/data-remain="(\d+)"/i);
-            if (remainMatch) {
-              const remainSec = parseInt(remainMatch[1], 10);
-              if (!isNaN(remainSec) && remainSec > 0) {
-                const h = Math.floor(remainSec / 3600);
-                const m = Math.floor((remainSec % 3600) / 60);
-                const s = remainSec % 60;
-                this.state.sessionTimeText = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                continue;
-              }
-            }
-
-            // 4. Try plain number (seconds remaining or elapsed)
-            const numOnly = cleanValue.replace(/[^\d]/g, '');
-            if (numOnly.length > 0 && cleanValue.length < 10) {
-              const totalSec = parseInt(numOnly, 10);
-              if (!isNaN(totalSec) && totalSec > 0 && totalSec < 86400) {
-                const h = Math.floor(totalSec / 3600);
-                const m = Math.floor((totalSec % 3600) / 60);
-                const s = totalSec % 60;
-                this.state.sessionTimeText = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-                continue;
-              }
-            }
-
-            // 5. If value has any text content, store it raw as session info
-            if (cleanValue.length > 0 && !this.state.sessionTimeText) {
-              this.state.sessionTimeText = cleanValue;
-            }
-
             continue;
           }
 
