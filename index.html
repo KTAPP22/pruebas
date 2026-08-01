@@ -581,7 +581,7 @@
                   if (!dataId || !dataId.startsWith(rId)) return;
                   const colSuffix = dataId.substring(rId.length);
                   const val = el.textContent.trim();
-                  this.applyColumnValue(entry, colSuffix, val, colMap);
+                  this.applyColumnValue(entry, colSuffix, val, activeColMap, el);
                   // Detect pit IN/OUT from any column value
                   this.detectPitStatus(rId, entry, val);
                 });
@@ -615,7 +615,7 @@
               if (!this.driverInPit.has(rowId)) this.driverInPit.set(rowId, false);
             }
             const entry = this.sessionRows.get(rowId);
-            if (this.applyColumnValue(entry, suffix, value, colMap)) {
+            if (this.applyColumnValue(entry, suffix, value, colMap, null)) {
               hasUpdates = true;
             }
             // Detect pit IN/OUT from cell value
@@ -626,8 +626,8 @@
         if (hasUpdates) {
           this.state.isLiveConnected = true;
           this.state.drivers = Array.from(this.sessionRows.values())
-            .filter(d => d.kartNumber > 0)
-            .sort((a, b) => a.position - b.position);
+            .filter(d => d.kartNumber > 0 || (d.name && d.name !== 'Piloto'))
+            .sort((a, b) => (a.position || 999) - (b.position || 999));
 
           this.resolveTargetKart();
 
@@ -654,50 +654,73 @@
         }
       }
 
-      applyColumnValue(entry, colSuffix, value, colMap) {
-        if (!colSuffix) return false;
+      applyColumnValue(entry, colSuffix, value, colMap, el) {
+        if (!colSuffix && !el) return false;
         
-        if (colSuffix === colMap.no) {
+        const className = el ? (el.className || '') : '';
+        const parentClassName = (el && el.parentElement) ? (el.parentElement.className || '') : '';
+        const combinedClass = (className + ' ' + parentClassName).toLowerCase();
+
+        // 1. Kart Number: Check colMap.no OR CSS class 'no'
+        if ((colMap && colSuffix === colMap.no) || combinedClass.includes('no')) {
           const kn = parseInt(value.replace(/[^\d]/g, ''), 10);
-          if (!isNaN(kn)) {
+          if (!isNaN(kn) && kn > 0) {
             entry.kartNumber = kn;
             return true;
           }
         }
-        if (colSuffix === colMap.dr) {
-          entry.name = value.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
-          return true;
+
+        // 2. Driver/Team Name: Check colMap.dr OR CSS class 'dr'
+        if ((colMap && colSuffix === colMap.dr) || combinedClass.includes('dr')) {
+          const cleanName = value.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+          if (cleanName) {
+            entry.name = cleanName;
+            return true;
+          }
         }
-        if (colSuffix === colMap.llp) {
+
+        // 3. Last Lap Time: Check colMap.llp OR CSS class 'llp'
+        if ((colMap && colSuffix === colMap.llp) || combinedClass.includes('llp')) {
           entry.lastLapMs = this.parseTimeToMs(value);
           return true;
         }
-        if (colSuffix === colMap.blp) {
+
+        // 4. Best Lap Time: Check colMap.blp OR CSS class 'blp'
+        if ((colMap && colSuffix === colMap.blp) || combinedClass.includes('blp')) {
           entry.bestLapMs = this.parseTimeToMs(value);
           return true;
         }
-        if (colSuffix === colMap.tlp) {
+
+        // 5. Total Laps: Check colMap.tlp OR CSS class 'tlp'
+        if ((colMap && colSuffix === colMap.tlp) || combinedClass.includes('tlp')) {
           const l = parseInt(value.replace(/[^\d]/g, ''), 10);
           if (!isNaN(l)) {
             entry.currentLap = l;
             return true;
           }
         }
-        if (colSuffix === colMap.gap) {
+
+        // 6. Gap Leader: Check colMap.gap OR CSS class 'gap'
+        if ((colMap && colSuffix === colMap.gap) || combinedClass.includes('gap')) {
           entry.gapLeaderMs = this.parseGapToMs(value);
           return true;
         }
-        if (colSuffix === colMap.int) {
+
+        // 7. Interval Ahead: Check colMap.int OR CSS class 'int'
+        if ((colMap && colSuffix === colMap.int) || combinedClass.includes('int')) {
           entry.intervalAheadMs = this.parseGapToMs(value);
           return true;
         }
-        if (colSuffix === 'c1' || colSuffix === 'c2' || colSuffix === 'c3') {
+
+        // 8. Position: Check CSS class 'rk' or c1/c2
+        if (combinedClass.includes('rk') || colSuffix === 'c1' || colSuffix === 'c2') {
           const pos = parseInt(value.replace(/[^\d]/g, ''), 10);
-          if (!isNaN(pos)) {
+          if (!isNaN(pos) && pos > 0) {
             entry.position = pos;
             return true;
           }
         }
+
         return false;
       }
 
