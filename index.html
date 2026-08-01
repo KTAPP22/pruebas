@@ -165,10 +165,11 @@
         this.activeProxyIndex = 0;
 
         this.corsProxies = [
-          (url) => url, // Direct fetch (Apex Timing natively sends Access-Control-Allow-Origin: *)
-          (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
           (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-          (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+          (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+          (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+          (url) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
+          (url) => url // Direct fetch fallback
         ];
 
         this.sessionRows = new Map();
@@ -405,7 +406,7 @@
       }
 
       async fetchRealApexData() {
-        const circuit = CIRCUITS[this.activeCircuitId];
+        const circuit = CIRCUITS[this.activeCircuitId] || CIRCUITS['lucas-guerrero'];
         const apiPort = circuit.configPort + 4;
         const targetUrl = `https://${this.configHost}/live-timing/commonv2/functions/live_ajax.php?version=1.0.0&init=${this.pollInit}&index=${this.pollIndex}&port=${apiPort}&counter=${this.pollCounter}&duration=100&id=${this.randomSessionId}&ignored=0`;
 
@@ -415,17 +416,19 @@
           
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            const timeoutId = setTimeout(() => controller.abort(), 4500);
 
             const response = await fetch(proxyUrl, { signal: controller.signal });
             clearTimeout(timeoutId);
 
-            if (!response.ok) continue;
+            if (!response.ok) {
+              this.activeProxyIndex = (this.activeProxyIndex + 1) % this.corsProxies.length;
+              continue;
+            }
 
             const dataText = await response.text();
-            this.pollCounter += 1;
 
-            if (dataText && dataText !== 'error' && !dataText.includes('<!DOCTYPE')) {
+            if (dataText && dataText !== 'error' && !dataText.includes('<!DOCTYPE') && !dataText.includes('<html')) {
               const atIdx1 = dataText.indexOf('@');
               const atIdx2 = dataText.indexOf('@', atIdx1 + 1);
               
@@ -433,14 +436,22 @@
                 const newInit = parseInt(dataText.substring(0, atIdx1), 10);
                 this.pollInit = newInit || this.pollInit;
                 this.pollIndex = parseInt(dataText.substring(atIdx1 + 1, atIdx2), 10) || this.pollIndex;
+                this.pollCounter += 1;
                 
                 const payload = dataText.substring(atIdx2 + 1);
                 this.activeProxyIndex = proxyIdx;
+                this.state.isLiveConnected = true;
                 this.processRawApexPayload(payload);
               }
               break;
+            } else {
+              // Failed content check, try next proxy next poll
+              this.activeProxyIndex = (this.activeProxyIndex + 1) % this.corsProxies.length;
             }
-          } catch (err) {}
+          } catch (err) {
+            // Network or CORS error, advance proxy index so next poll uses alternative transport
+            this.activeProxyIndex = (this.activeProxyIndex + 1) % this.corsProxies.length;
+          }
         }
       }
 
