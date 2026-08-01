@@ -717,25 +717,23 @@
 
         const upper = value.toUpperCase().trim();
         
-        // Detect IN: driver enters the box (just mark as in-pit, no count yet)
-        if (upper === 'IN' || upper === 'PIT IN' || upper === 'PITIN' || upper === 'BOX IN') {
-          this.driverInPit.set(rowId, true);
-          entry.inPit = true;
-        }
-        // Detect OUT: driver exits the box → +1 pit stop confirmed (like a finish line pass)
-        else if (upper === 'OUT' || upper === 'PIT OUT' || upper === 'PITOUT' || upper === 'BOX OUT') {
-          if (this.driverInPit.get(rowId)) {
-            // Only count if driver was marked IN first
+        // Detect IN: driver enters pit box → increment pit stop count immediately & mark IN
+        if (upper === 'IN' || upper === 'PIT IN' || upper === 'PITIN' || upper === 'BOX IN' || upper.includes('IN')) {
+          if (!this.driverInPit.get(rowId)) {
             const count = (this.pitCounts.get(rowId) || 0) + 1;
             this.pitCounts.set(rowId, count);
             entry.pitCount = count;
-            
-            // Reset stint start timestamp and lap count on pit exit (OUT)
-            this.stintStartTimes.set(rowId, Date.now());
-            this.stintStartLaps.set(rowId, entry.currentLap);
+            this.driverInPit.set(rowId, true);
+            entry.inPit = true;
           }
+        }
+        // Detect OUT: driver exits pit box → reset stint timers & mark OUT
+        else if (upper === 'OUT' || upper === 'PIT OUT' || upper === 'PITOUT' || upper === 'BOX OUT' || upper.includes('OUT')) {
           this.driverInPit.set(rowId, false);
           entry.inPit = false;
+          // Reset stint start timestamp and lap count on pit exit (OUT)
+          this.stintStartTimes.set(rowId, Date.now());
+          this.stintStartLaps.set(rowId, entry.currentLap);
         }
         
         // Ensure stint start timestamp is initialized if missing
@@ -1107,9 +1105,21 @@
                 )}
                 <div className="flex flex-col items-center gap-0.5 w-full">
                   <span className="text-xs font-mono text-white font-extrabold truncate max-w-full px-1">{driver ? driver.name : currentTargetName}</span>
-                  <span className="text-[9px] font-mono text-gray-300 font-bold bg-white/10 px-2 py-0.5 rounded-md">
-                    {driver ? `KART #${driver.kartNumber}` : 'SIN KART'}
-                  </span>
+                  <div className="flex items-center gap-1 flex-wrap justify-center">
+                    <span className="text-[9px] font-mono text-gray-300 font-bold bg-white/10 px-2 py-0.5 rounded-md">
+                      {driver ? `KART #${driver.kartNumber}` : 'SIN KART'}
+                    </span>
+                    {driver && driver.inPit && (
+                      <span className="text-[9px] font-mono text-red-300 font-black bg-red-600/80 px-2 py-0.5 rounded-md animate-pulse">
+                        🛑 IN BOX
+                      </span>
+                    )}
+                    {driver && !driver.inPit && driver.pitCount > 0 && (
+                      <span className="text-[9px] font-mono text-amber-300 font-bold bg-amber-600/40 px-2 py-0.5 rounded-md">
+                        🛑 {driver.pitCount} {driver.pitCount === 1 ? 'PARADA' : 'PARADAS'}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
