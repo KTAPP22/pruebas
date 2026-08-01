@@ -520,9 +520,12 @@
                 const rId = row.getAttribute('data-id');
                 if (!rId || rId === 'r0') return;
 
+                const dataPos = row.getAttribute('data-pos');
+                const rowPos = dataPos ? parseInt(dataPos, 10) : 0;
+
                 if (!this.sessionRows.has(rId)) {
                   this.sessionRows.set(rId, {
-                    position: 0,
+                    position: !isNaN(rowPos) && rowPos > 0 ? rowPos : 0,
                     kartNumber: 0,
                     name: 'Piloto',
                     lastLapMs: 0,
@@ -537,6 +540,7 @@
                   if (!this.driverInPit.has(rId)) this.driverInPit.set(rId, false);
                 }
                 const entry = this.sessionRows.get(rId);
+                if (!isNaN(rowPos) && rowPos > 0) entry.position = rowPos;
 
                 row.querySelectorAll('[data-id]').forEach(el => {
                   const dataId = el.getAttribute('data-id');
@@ -619,13 +623,6 @@
       applyColumnValue(entry, colSuffix, value, colMap) {
         if (!colSuffix) return false;
         
-        if (colSuffix === 'c1' || colSuffix === 'c2' || colSuffix === 'c3') {
-          const pos = parseInt(value.replace(/[^\d]/g, ''), 10);
-          if (!isNaN(pos)) {
-            entry.position = pos;
-            return true;
-          }
-        }
         if (colSuffix === colMap.no) {
           const kn = parseInt(value.replace(/[^\d]/g, ''), 10);
           if (!isNaN(kn)) {
@@ -659,6 +656,13 @@
         if (colSuffix === colMap.int) {
           entry.intervalAheadMs = this.parseGapToMs(value);
           return true;
+        }
+        if (colSuffix === 'c1' || colSuffix === 'c2' || colSuffix === 'c3') {
+          const pos = parseInt(value.replace(/[^\d]/g, ''), 10);
+          if (!isNaN(pos)) {
+            entry.position = pos;
+            return true;
+          }
         }
         return false;
       }
