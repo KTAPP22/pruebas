@@ -165,6 +165,7 @@
         this.activeProxyIndex = 0;
 
         this.corsProxies = [
+          (url) => url, // Direct fetch (Apex Timing natively sends Access-Control-Allow-Origin: *)
           (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
           (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
           (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
@@ -285,12 +286,12 @@
       start() {
         if (this.pollTimerId) return;
         this.fetchRealApexData();
-        // Fast live polling: 1.5s interval to receive exact timing feed updates instantly
+        // Ultra-fast live polling: 1000ms interval for real-time live timing sync
         const scheduleNext = () => {
           this.pollTimerId = setTimeout(() => {
             this.fetchRealApexData();
             scheduleNext();
-          }, 1500);
+          }, 1000);
         };
         scheduleNext();
       }
@@ -496,9 +497,9 @@
               }
             }
 
-            // Check if dyn1 or track contains valid session time (e.g. dyn1|count|121494)
+            // Check if dyn1 or track contains valid session time (e.g. dyn1|count|121494 or dyn1|text|00:10:00)
             const parsedTime1 = this.parseSessionTimeValue(value);
-            if (parsedTime1 && this.state.sessionTimeText !== parsedTime1) {
+            if (parsedTime1) {
               this.state.sessionTimeText = parsedTime1;
               hasUpdates = true;
             }
@@ -508,7 +509,7 @@
           // Capture session time from ALL dynamic cells (dyn2, dyn3, dyn4, etc.)
           if (cellId.startsWith('dyn')) {
             const parsedTime = this.parseSessionTimeValue(value);
-            if (parsedTime && this.state.sessionTimeText !== parsedTime) {
+            if (parsedTime) {
               this.state.sessionTimeText = parsedTime;
               hasUpdates = true;
             }
