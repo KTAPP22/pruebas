@@ -165,11 +165,10 @@
         this.activeProxyIndex = 0;
 
         this.corsProxies = [
-          (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+          (url) => url, // Direct fetch (Apex Timing natively sends Access-Control-Allow-Origin: *)
           (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
           (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-          (url) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
-          (url) => url // Direct fetch fallback
+          (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
         ];
 
         this.sessionRows = new Map();
@@ -418,7 +417,7 @@
           
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4500);
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
 
             const response = await fetch(proxyUrl, { signal: controller.signal });
             clearTimeout(timeoutId);
