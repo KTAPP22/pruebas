@@ -177,6 +177,7 @@
         this.driverInPit = new Map(); // Track if driver is currently IN pit
         this.stintStartTimes = new Map(); // Track timestamp when current stint started per rowId
         this.stintStartLaps = new Map(); // Track lap count when current stint started per rowId
+        this.dynamicColumnMap = {}; // Automatically populated from feed header r0 data-type attributes
 
         // Restore saved endurance live state from localStorage
         let restoredStarted = false;
@@ -264,6 +265,7 @@
         this.sessionRows.clear();
         this.pitCounts.clear();
         this.driverInPit.clear();
+        this.dynamicColumnMap = {};
         
         localStorage.setItem('kart_active_circuit_id', circuitId);
         
@@ -458,8 +460,7 @@
       processRawApexPayload(payload) {
         if (!payload || payload.trim() === '') return;
 
-        const circuit = CIRCUITS[this.activeCircuitId];
-        const colMap = circuit.columnMap;
+        const circuit = CIRCUITS[this.activeCircuitId] || CIRCUITS['lucas-guerrero'];
         const lines = payload.split('\n');
         let hasUpdates = false;
 
@@ -475,6 +476,8 @@
           const pipeIdx2 = rest.indexOf('|');
           const valueType = pipeIdx2 >= 0 ? rest.substring(0, pipeIdx2) : rest;
           const value = pipeIdx2 >= 0 ? rest.substring(pipeIdx2 + 1) : '';
+
+          const colMap = { ...circuit.columnMap, ...this.dynamicColumnMap };
 
           if (cellId === 'init') {
             const raceMode = localStorage.getItem('kart_race_mode') || 'sprint';
@@ -532,6 +535,20 @@
               const gridHtml = rest.substring(pipeIdx2 + 1);
               const tempDiv = document.createElement('div');
               tempDiv.innerHTML = '<table>' + gridHtml + '</table>';
+
+              // Extract automatic column mappings from header row r0
+              const headerRow = tempDiv.querySelector('tr[data-id="r0"]');
+              if (headerRow) {
+                headerRow.querySelectorAll('td[data-id][data-type]').forEach(th => {
+                  const cId = th.getAttribute('data-id');
+                  const cType = th.getAttribute('data-type');
+                  if (cId && cType) {
+                    this.dynamicColumnMap[cType] = cId;
+                  }
+                });
+              }
+
+              const activeColMap = { ...circuit.columnMap, ...this.dynamicColumnMap };
 
               const rows = tempDiv.querySelectorAll('tr[data-id]');
               rows.forEach(row => {
