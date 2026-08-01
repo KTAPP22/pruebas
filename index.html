@@ -150,7 +150,11 @@
         
         // Load configurations
         this.targetDriverName = localStorage.getItem('kart_target_driver_name') || 'Alex R.';
-        this.activeCircuitId = localStorage.getItem('kart_active_circuit_id') || 'lucas-guerrero';
+        let savedCircuitId = localStorage.getItem('kart_active_circuit_id');
+        if (!savedCircuitId || !CIRCUITS[savedCircuitId]) {
+          savedCircuitId = 'lucas-guerrero';
+        }
+        this.activeCircuitId = savedCircuitId;
         this.targetKart = 14;
 
         this.configHost = 'live-data.apex-timing.com';
@@ -206,9 +210,11 @@
         this.sessionTimeRemainingMs = 0;
         this.clockIntervalId = null;
 
+        const activeCircuit = CIRCUITS[this.activeCircuitId] || CIRCUITS['lucas-guerrero'];
+
         this.state = {
           activeCircuitId: this.activeCircuitId,
-          trackName: CIRCUITS[this.activeCircuitId].name,
+          trackName: activeCircuit.name,
           sessionName: "Esperando tanda en vivo...",
           sessionTimeText: restoredSessionTime,
           flagStatus: "GREEN",
@@ -1401,10 +1407,52 @@
       );
     }
 
-    // Mount App
-    const rootElement = document.getElementById('root');
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(<App />);
+    // ErrorBoundary to prevent black screen crashes
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      componentDidCatch(error, errorInfo) {
+        console.error("React Error:", error, errorInfo);
+      }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="w-full h-full bg-black text-white p-6 flex flex-col items-center justify-center font-mono text-center gap-4">
+              <span className="text-4xl">⚠️</span>
+              <h2 className="text-xl font-bold text-red-500">Error de ejecución</h2>
+              <p className="text-sm text-gray-400 max-w-md">{this.state.error?.toString()}</p>
+              <button 
+                onClick={() => { localStorage.clear(); window.location.reload(); }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-black text-xs rounded-xl uppercase tracking-wider"
+              >
+                Resetear caché y Reiniciar App
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    // Mount App safely with ErrorBoundary
+    try {
+      const rootElement = document.getElementById('root');
+      if (rootElement) {
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        );
+      }
+    } catch (e) {
+      console.error("Mount error:", e);
+    }
   </script>
 </body>
 </html>
